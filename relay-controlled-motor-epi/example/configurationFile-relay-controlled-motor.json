@@ -1,0 +1,148 @@
+{
+    "system": {},
+    "system_url": "",
+    "template_url": "",
+    "template": {
+        "rooms": [],
+        "devices": [
+            {
+                "key": "processor",
+                "name": "CP4",
+                "type": "cp4",
+                "group": "processor",
+                "uid": 0
+            },
+            {
+                "key": "lifter-1",
+                "name": "lifter",
+                "type": "relaycontrolledmotor",
+                "group": "lifters",
+                "properties": {
+                    "RelayPulseTime": 500,
+                    "Relays": {
+                        "Open": {
+                           "portDeviceKey": "processor",
+                            "portNumber": 1,
+                            "disablePullUpResistor": false,
+                            "minimumChange": 100
+                        },
+                         "Close": {
+                            "portDeviceKey": "processor",
+                             "portNumber": 2,
+                             "disablePullUpResistor": false,
+                             "minimumChange": 100
+                        },
+                        "Stop": {
+                            "method": "OpenAndClose"
+                        }
+                    },
+                    "StopOrPresetLabel": "stop"                  
+                }
+            },
+            {
+                "key": "screen-1",
+                "name": "screen",
+                "type": "relaycontrolledmotor",
+                "group": "screens",
+                "properties": {
+                    "RelayPulseTime": 500,
+                    "Relays": {
+                        "Open": {
+                           "portDeviceKey": "processor",
+                            "portNumber": 3,
+                            "disablePullUpResistor": false,
+                            "minimumChange": 100
+                        },
+                         "Close": {
+                            "portDeviceKey": "processor",
+                             "portNumber": 4,
+                             "disablePullUpResistor": false,
+                             "minimumChange": 100
+                         },
+                         "Stop": {
+                             "method": "OpenAndClose"
+                         }
+                    },
+                    "StopOrPresetLabel": "stop"                  
+                }
+            },
+            {
+                "key": "display-1",
+                "name": "display",
+                "type": "pjlink",
+                "group": "displays",
+
+                "properties": {
+                    "control": {
+                        "method": "Tcpip",
+                        "tcpSshProperties": {
+                            "autoReconnect": true,
+                            "AutoReconnectIntervalMs": 2000,
+                            "address": "192.168.104.60",
+                            "port": 4352,
+                            "username": "",
+                            "password": "JBMIAProjectorLink"
+                        }
+                    },
+                    "lifter": {
+                        "deviceKey": "lifter-1",
+                        "downTriggersDisplayOn": true,
+                        "displayOffTriggersUp": true
+                    },
+                    "screen": {
+                        "deviceKey": "screen-1",
+                        "downTriggersDisplayOn": true,
+                        "upTriggersDisplayOff": true,
+                        "displayOffTriggersUp": true,
+                        "displayOnTriggersDown": true
+                    }
+                }
+            },
+            {
+                "key": "touchpanel-1",
+                "name": "touchpanel",
+                "type": "basic-tp",
+                "group": "touchpanel",
+                "properties": {
+                    "type": "tsw1070",
+                    "control": {
+                        "method": "ipid",
+                        "ipid": "03"
+                    },
+                    "defaultRoomKey": "room-1",
+                    "password": "1988",
+                    "sgdFile": "PCC-TSW-1070.sgd"
+                }
+            },
+            {
+                "key": "room-1",
+                "name": "Example room",
+                "type": "basic-room",
+                "group": "room",
+                "properties": {
+                    "help": {
+                        "message":"Please contact reception for help"
+                    },
+                    "addresses": {
+                        "phoneNumber":"Example address",
+                        "sipAddress":"Australia"
+                    },
+                    "password": "1234",
+                    "defaultDisplayKey": "display-1",
+                    "environment": {
+                        "deviceKeys": [
+                            "lifter-1"
+                        ]
+                    }
+                }
+            }
+        ],
+        "info": {
+            "processorType": "cp4",
+            "lastModifiedDate": "2024-07-15T17:54:41.315Z",
+            "systemType": "custom",
+            "comment": "Custom system with room and tp plugins",
+            "requiredControlSofwareVersion": ""
+        }
+    }
+}
