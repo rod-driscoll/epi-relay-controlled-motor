@@ -41,7 +41,7 @@ namespace relay_controlled_motor_epi
     }
 
     // can't derive from RelayControlledShade
-    public class Device : ShadeBase, IShadesFeedback, IShadesOpenClosedFeedback, IShadesRaiseLowerFeedback, IDisposable
+    public class Device : ShadeBase, IShadesFeedback, IShadesOpenClosedFeedback, IShadesRaiseLowerFeedback, IHasFeedback, IDisposable
     {
         #region variables
         public uint LogLevel { get; set; }
