@@ -1,11 +1,14 @@
 ﻿using Crestron.SimplSharp;
+using Crestron.SimplSharpProInternal;
 using PepperDash.Core;
 using PepperDash.Essentials.Core;
 using PepperDash.Essentials.Core.CrestronIO;
-using PepperDash.Essentials.Core.Shades;
+using PepperDash.Essentials.Core.Shades; // for interfaces, I hope they don't remove them and if they do I hope they put them into .Devices.Common.Shades
+using Serilog.Events;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ShadeBase = PepperDash.Essentials.Devices.Common.Shades.ShadeBase;
 
 namespace relay_controlled_motor_epi
 {
@@ -25,13 +28,13 @@ namespace relay_controlled_motor_epi
     public class PositionEventArgs : EventArgs
     {
         public PositionStates Status { get; set; } // must declare get; set; so it can be used in S+
-        public uint RemainingMillisecs { get; set; } // must declare get; set; so it can be used in S+
-        public uint CurrentPercent { get; set; } // must declare get; set; so it can be used in S+
-        public uint PendingPercent { get; set; } // must declare get; set; so it can be used in S+
-        public uint id { get; set; }
+        public int RemainingMillisecs { get; set; } // must declare get; set; so it can be used in S+
+        public int CurrentPercent { get; set; } // must declare get; set; so it can be used in S+
+        public int PendingPercent { get; set; } // must declare get; set; so it can be used in S+
+        public int id { get; set; }
         //[System.Obsolete("Empty ctor only exists to allow class to be used in S+", true)]
         public PositionEventArgs() { } // must declare an empty ctor so it can be used in S+
-        public PositionEventArgs(PositionStates status, uint currentPercent, uint pendingPercent, uint remainingMillisecs)
+        public PositionEventArgs(PositionStates status, int currentPercent, int pendingPercent, int remainingMillisecs)
         {
             this.Status = status;
             this.CurrentPercent = currentPercent;
@@ -41,10 +44,11 @@ namespace relay_controlled_motor_epi
     }
 
     // can't derive from RelayControlledShade
-    public class Device : ShadeBase, IShadesFeedback, IShadesOpenClosedFeedback, IShadesRaiseLowerFeedback, IHasFeedback, IDisposable
+    public class Device : ShadeBase, IHasFeedback, IDisposable,
+        IShadesFeedback, IShadesOpenClosedFeedback, IShadesRaiseLowerFeedback 
     {
         #region variables
-        public uint LogLevel { get; set; }
+        public LogEventLevel LogLevel { get; set; }
 
         public Config config { get; private set; }
 
@@ -52,21 +56,20 @@ namespace relay_controlled_motor_epi
         List<ISwitchedOutput> StopRelays;
         ISwitchedOutput CloseRelay;
 
-
         CTimer positionTimer;
         public event EventHandler<PositionEventArgs> PositionChange;
 
-        int RelayPulseTime = 200;
-        public uint sampleMillisecs = 100;
-        public uint DirectionChangeMilliseconds = 500;
-        private uint directionChangeMillisecondsRemaining = 0;
-        public uint TravelMilliseconds { get; private set; } // full travel time
-        public uint StartDelayMilliseconds { get; private set; } // ms from not moving to moving
-        public uint PositionMilliseconds { get; private set; } // current ms from closed
-        public uint RemainingMilliseconds { get; private set; }
+        public int DirectionChangeMilliseconds = 500;
+        private int directionChangeMillisecondsRemaining = 0;
+        public int SampleMillisecs {  get; private set; }
+        public int RelayPulseTime { get; private set; }
+        public int TravelMilliseconds { get; private set; } // full travel time
+        public int StartDelayMilliseconds { get; private set; } // ms from not moving to moving
+        public int PositionMilliseconds { get; private set; } // current ms from closed
+        public int RemainingMilliseconds { get; private set; }
 
-        public uint PercentOpenCurrent { get; private set; } // 0% == closed, 100% == open
-        public uint PercentOpenPending { get; private set; }
+        public int PercentOpenCurrent { get; private set; } // 0% == closed, 100% == open
+        public int PercentOpenPending { get; private set; }
 
         public PositionStates StatusCurrent { get; private set; }
         public FeedbackCollection<Feedback> Feedbacks { get; private set; }
@@ -84,9 +87,11 @@ namespace relay_controlled_motor_epi
         public Device(string key, string name, Config config)
             : base(key, name)
         {
-            Debug.Console(1, this, "Constructor starting");
+            Debug.LogMessage(LogEventLevel.Debug, this, "Constructor starting");
             this.config = config;
             if (TravelMilliseconds == 0) TravelMilliseconds = 10000;
+            RelayPulseTime = config.RelayPulseTime == 0 ? 500: config.RelayPulseTime;
+            SampleMillisecs = config.Relays.Open.MinimumChange == 0 ? 100 : config.Relays.Open.MinimumChange;
             OpenRelay = GetSwitchedOutputFromDevice(config.Relays.Open);
             CloseRelay = GetSwitchedOutputFromDevice(config.Relays.Close);
 
@@ -111,26 +116,31 @@ namespace relay_controlled_motor_epi
                 StatusFeedback
             };
             //e.g. ShadeIsOpenFeedback.FireUpdate();
+            CrestronEnvironment.ProgramStatusEventHandler += type =>
+            {
+                if (type != eProgramStatusEventType.Stopping) return;
+                Dispose();
+            };
         }
 
         #region methods
 
-        private uint PositionMillisecondsToPercent(uint ms)
+        private int PositionMillisecondsToPercent(int ms)
         {
-            uint percent_ = 100 * ms / TravelMilliseconds;
+            int percent_ = 100 * ms / TravelMilliseconds;
             return (percent_);
         }
-        private uint PositionPercentToMilliseconds(uint percent)
+        private int PositionPercentToMilliseconds(int percent)
         {
-            uint ms_ = TravelMilliseconds * percent/100;
+            int ms_ = TravelMilliseconds * percent/100;
             return (ms_);
         }
         private void OnPositionChange(PositionEventArgs args)
         {
-            //Debug.Console(1, this, "OnPositionChange");
+            //Debug.LogMessage(LogEventLevel.Debug, this, "OnPositionChange");
             if (PositionChange != null)
                 PositionChange(this, args);
-            //Debug.Console(1, this, "OnPositionChange Pending: {0}, Current: {1}, PositionMilliseconds:{2}, RemainingMilliseconds:{3} FireUpdates {4}", PercentOpenPending, PercentOpenCurrent, PositionMilliseconds, RemainingMilliseconds, Feedbacks == null ? "== null" : "exist");
+            //Debug.LogMessage(LogEventLevel.Debug, this, "OnPositionChange Pending: {0}, Current: {1}, PositionMilliseconds:{2}, RemainingMilliseconds:{3} FireUpdates {4}", PercentOpenPending, PercentOpenCurrent, PositionMilliseconds, RemainingMilliseconds, Feedbacks == null ? "== null" : "exist");
             foreach (var feedback in Feedbacks.Where(x => x != null))
             {
                 try
@@ -140,7 +150,7 @@ namespace relay_controlled_motor_epi
                 }
                 catch (Exception e)
                 {
-                    Debug.Console(LogLevel, this, "OnPositionChange FireUpdate {0} ERROR: {1}", feedback.Key, e.Message);
+                    Debug.LogMessage(LogLevel,this, "OnPositionChange FireUpdate {0} ERROR: {1}", feedback.Key, e.Message);
                     //[14:11:08.863]App 1:[screen-1] OnPositionChange FireUpdate IsClosed ERROR: Object reference not set to an instance of an obj
                 }
             }
@@ -148,6 +158,7 @@ namespace relay_controlled_motor_epi
 
         void PulseOutput(ISwitchedOutput output, int pulseTime)
         {
+            //Debug.LogMessage(LogEventLevel.Information, this, "PulseOutput");
             output.On();
             CTimer pulseTimer = new CTimer(new CTimerCallbackFunction((o) => output.Off()), pulseTime);
         }
@@ -161,51 +172,60 @@ namespace relay_controlled_motor_epi
         }
 
         /// <summary>
-        /// Attempts to get the port on teh specified device from config
+        /// Attempts to get the port on the specified device from config
         /// </summary>
         /// <param name="relayConfig"></param>
         /// <returns></returns>
         ISwitchedOutput GetSwitchedOutputFromDevice(IOPortConfig relayConfig)
         {
-            //Debug.Console(1, this, "GetSwitchedOutputFromDevice: relay on port '{0}' from device with key '{1}'", relayConfig.PortNumber, relayConfig.PortDeviceKey);
+            //Debug.LogMessage(LogEventLevel.Debug, this, "GetSwitchedOutputFromDevice: relay on port '{0}' from device with key '{1}'", relayConfig.PortNumber, relayConfig.PortDeviceKey);
             var portDevice = DeviceManager.GetDeviceForKey(relayConfig.PortDeviceKey);
 
             if (portDevice != null)
             {
-                Debug.Console(1, this, "GetSwitchedOutputFromDevice:portDevice {0}", portDevice == null ? "== null" : "exists");
-                ISwitchedOutput relay_ = (portDevice as ISwitchedOutputCollection).SwitchedOutputs[relayConfig.PortNumber];
-                if (relay_ == null)
-                    Debug.Console(1, this, "Error: relay is null");
-                return relay_;
+                Debug.LogMessage(LogEventLevel.Debug, this, "GetSwitchedOutputFromDevice {0} port:{1}", portDevice == null ? "== null" : portDevice.Key, relayConfig.PortNumber);
+                var ports_ = portDevice as ISwitchedOutputCollection;
+                if (ports_ == null)
+                    Debug.LogMessage(LogEventLevel.Debug, this, "Error: device is NOT ISwitchedOutputCollection");
+                else
+                {
+                    if(ports_.SwitchedOutputs.ContainsKey(relayConfig.PortNumber))
+                    {
+                        ISwitchedOutput relay_ = ports_.SwitchedOutputs[relayConfig.PortNumber];
+                        if (relay_ == null)
+                            Debug.LogMessage(LogEventLevel.Debug, this, "Error: relay[{0}] is null", relayConfig.PortNumber);
+                        else
+                            return relay_; 
+                    }
+                    else
+                        Debug.LogMessage(LogEventLevel.Debug, this, "Error: no port with Key {0}", relayConfig.PortNumber);
+                }
             }
-            else
-            {
-                Debug.Console(1, this, "Error: Unable to get relay on port '{0}' from device with key '{1}'", relayConfig.PortNumber, relayConfig.PortDeviceKey);
-                return null;
-            }
+            Debug.LogMessage(LogEventLevel.Debug, this, "Error: Unable to get relay on port '{0}' from device with key '{1}'", relayConfig.PortNumber, relayConfig.PortDeviceKey);
+            return null;
         }
 
         void PositionTimerExpired(object obj)
         {
-            //Debug.Console(LogLevel, this, "PositionTimerExpired, statusCurrent: {0}, PercentOpenCurrent: {1}, PercentOpenPending: {2}, remaining ms: {3}",
+            //Debug.LogMessage(LogLevel,this, "PositionTimerExpired, statusCurrent: {0}, PercentOpenCurrent: {1}, PercentOpenPending: {2}, remaining ms: {3}",
             //    StatusCurrent.ToString(), PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds);
             try
             {
                 if (positionTimer != null)
                 {
-                    //Debug.Console(LogLevel, "{0} PositionTimerExpired {1}", ClassName, RemainingMilliseconds);
+                    //Debug.LogMessage(LogLevel,"{0} PositionTimerExpired {1}", ClassName, RemainingMilliseconds);
                     // changing direction
                     if (directionChangeMillisecondsRemaining > 0)
                     {
-                        if (directionChangeMillisecondsRemaining < sampleMillisecs)
+                        if (directionChangeMillisecondsRemaining < SampleMillisecs)
                             directionChangeMillisecondsRemaining = 0;
                         else
-                            directionChangeMillisecondsRemaining -= sampleMillisecs;
+                            directionChangeMillisecondsRemaining -= SampleMillisecs;
                     }
                     // closing
                     else if (StatusCurrent == PositionStates.closing)
                     {
-                        uint samplePercent_ = PositionMillisecondsToPercent(sampleMillisecs);
+                        int samplePercent_ = PositionMillisecondsToPercent(SampleMillisecs);
                         if (PercentOpenCurrent >= samplePercent_)
                             PercentOpenCurrent -= samplePercent_;
                         else
@@ -225,12 +245,12 @@ namespace relay_controlled_motor_epi
                             Dispose();
                         }
                         else // keep going
-                            RemainingMilliseconds = PositionMillisecondsToPercent(PercentOpenCurrent - PercentOpenPending);
+                            RemainingMilliseconds = PositionPercentToMilliseconds(PercentOpenCurrent - PercentOpenPending);
                     }
                     // opening
                     else if (StatusCurrent == PositionStates.opening)
                     {
-                        uint samplePercent_ = PositionMillisecondsToPercent(sampleMillisecs);
+                        int samplePercent_ = PositionMillisecondsToPercent(SampleMillisecs);
                         if (PercentOpenCurrent <= 100 - samplePercent_)
                             PercentOpenCurrent += samplePercent_;
                         else
@@ -252,25 +272,25 @@ namespace relay_controlled_motor_epi
                         else // keep going
                         {
                             RemainingMilliseconds = PositionPercentToMilliseconds(PercentOpenPending - PercentOpenCurrent);
-                            //Debug.Console(LogLevel, this, "PositionTimerExpired statusCurrent: {0}, RemainingMilliseconds: {1}, PercentOpenCurrent: {2}, PercentOpenPending: {3}", 
+                            //Debug.LogMessage(LogLevel,this, "PositionTimerExpired statusCurrent: {0}, RemainingMilliseconds: {1}, PercentOpenCurrent: {2}, PercentOpenPending: {3}", 
                             //    StatusCurrent.ToString(), RemainingMilliseconds, PercentOpenCurrent, PercentOpenPending);
                         }
                     }
                     else
                     {
-                        Debug.Console(LogLevel, this, "PositionTimerExpired, Unhandled statusCurrent: {0}, PercentOpenCurrent: {1}, PercentOpenPending: {2}", StatusCurrent.ToString(), PercentOpenCurrent, PercentOpenPending);
+                        Debug.LogMessage(LogLevel,this, "PositionTimerExpired, Unhandled statusCurrent: {0}, PercentOpenCurrent: {1}, PercentOpenPending: {2}", StatusCurrent.ToString(), PercentOpenCurrent, PercentOpenPending);
                         Dispose();
                     }
                     OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
-                    //Debug.Console(LogLevel, this, "PositionTimerExpired, OnPower done");
+                    //Debug.LogMessage(LogLevel,this, "PositionTimerExpired, OnPower done");
                 }
                 else
-                    Debug.Console(LogLevel, this, "PositionTimerExpired, PositionTimer == null");
-                //Debug.Console(LogLevel, this, "PositionTimerExpired done");
+                    Debug.LogMessage(LogLevel,this, "PositionTimerExpired, PositionTimer == null");
+                //Debug.LogMessage(LogLevel,this, "PositionTimerExpired done");
             }
             catch (Exception e)
             {
-                Debug.Console(LogLevel, this, "PositionTimer ERROR: {1}", e.Message);
+                Debug.LogMessage(LogLevel,this, "PositionTimer ERROR: {1}", e.Message);
             }
         }
 
@@ -278,19 +298,19 @@ namespace relay_controlled_motor_epi
         {
             if (positionTimer != null)
             {
-                Debug.Console(LogLevel, this, "StartPositionTimer resetting");
-                positionTimer.Reset(sampleMillisecs, sampleMillisecs);
+                Debug.LogMessage(LogLevel,this, "StartPositionTimer resetting");
+                positionTimer.Reset(SampleMillisecs, SampleMillisecs);
             }
             else
             {
-                Debug.Console(LogLevel, this, "StartPositionTimer creating new PositionTimer, sampleMillisecs: {0}", sampleMillisecs);
-                positionTimer = new CTimer(PositionTimerExpired, this, sampleMillisecs, sampleMillisecs);
+                Debug.LogMessage(LogLevel,this, "StartPositionTimer creating new PositionTimer, SampleMillisecs: {0}", SampleMillisecs);
+                positionTimer = new CTimer(PositionTimerExpired, this, SampleMillisecs, SampleMillisecs);
             }
-            //Debug.Console(LogLevel, this, "StartPositionTimer done");
+            //Debug.LogMessage(LogLevel,this, "StartPositionTimer done");
         }
         public void Dispose()
         {
-            Debug.Console(1, this, "Dispose");
+            Debug.LogMessage(LogEventLevel.Debug, this, "Dispose");
             if (positionTimer != null)
             {
                 positionTimer.Stop();
@@ -310,16 +330,25 @@ namespace relay_controlled_motor_epi
                     directionChangeMillisecondsRemaining =
                         StatusCurrent == PositionStates.opening ? 2 * DirectionChangeMilliseconds : DirectionChangeMilliseconds;
                     StatusCurrent = PositionStates.closing;
+                    Debug.LogMessage(LogEventLevel.Information, this, "PulseOutput CloseRelay");
                     if (config.Relays.Stop.StopMethod == eRelayControlledMotorStopMethod.OppositeDirection)
                         DoublePulseOutput(CloseRelay, RelayPulseTime);
                     else
                         PulseOutput(CloseRelay, RelayPulseTime);
                     StartPositionTimer();
-                    Debug.Console(1, this, "Close starting, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                    Debug.LogMessage(LogEventLevel.Debug, this, "Close starting, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
                     OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
                 }
                 else
-                    Debug.Console(1, this, "Close already running, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                {
+                    Debug.LogMessage(LogEventLevel.Information, this, "Close already running, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                    if (PercentOpenPending == 0 && PercentOpenCurrent == 0 && StatusCurrent != PositionStates.closed)
+                    {
+                        StatusCurrent = PositionStates.closed;
+                        OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
+                        Dispose();
+                    }
+                }
             }
             // open
             else if (PercentOpenPending == 100 || PercentOpenPending > PercentOpenCurrent) 
@@ -329,16 +358,25 @@ namespace relay_controlled_motor_epi
                     directionChangeMillisecondsRemaining =
                         StatusCurrent == PositionStates.closing ? 2 * DirectionChangeMilliseconds : DirectionChangeMilliseconds;
                     StatusCurrent = PositionStates.opening;
+                    Debug.LogMessage(LogEventLevel.Information, this, "PulseOutput OpenRelay");
                     if (config.Relays.Stop.StopMethod == eRelayControlledMotorStopMethod.OppositeDirection)
                         DoublePulseOutput(OpenRelay, RelayPulseTime);
                     else
                         PulseOutput(OpenRelay, RelayPulseTime);
                     StartPositionTimer();
-                    Debug.Console(1, this, "Open starting, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                    Debug.LogMessage(LogEventLevel.Debug, this, "Open starting, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
                     OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
                 }
                 else
-                    Debug.Console(1, this, "Open already running, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                {
+                    Debug.LogMessage(LogEventLevel.Information, this, "Open already running, PercentOpenCurrent: {0}, PercentOpenPending: {1}", PercentOpenCurrent, PercentOpenPending);
+                    if (PercentOpenPending == 100 && PercentOpenCurrent == 100 && StatusCurrent != PositionStates.open)
+                    {
+                        StatusCurrent = PositionStates.open;
+                        OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
+                        Dispose();
+                    }
+                }
             }
             // stop
             else // PercentOpenPending > PercentOpenCurrent 
@@ -363,23 +401,26 @@ namespace relay_controlled_motor_epi
                         break;
                 }
 
-                if (PositionMilliseconds <= sampleMillisecs)
+                if (PositionMilliseconds <= SampleMillisecs)
                     StatusCurrent = PositionStates.closed;
-                else if (PositionMilliseconds >= TravelMilliseconds-sampleMillisecs)
+                else if (PositionMilliseconds >= TravelMilliseconds-SampleMillisecs)
                     StatusCurrent = PositionStates.open;
                 else
                     StatusCurrent = PositionStates.stop;
 
                 if (StopRelays != null)
+                {
+                    Debug.LogMessage(LogEventLevel.Information, this, "PulseOutput StopRelays");
                     foreach (var item_ in StopRelays)
                         PulseOutput(item_, RelayPulseTime);
+                }
                 OnPositionChange(new PositionEventArgs(StatusCurrent, PercentOpenCurrent, PercentOpenPending, RemainingMilliseconds));
                 Dispose();
             }
         }
         public void SetPosition(PositionStates state)
         {
-            Debug.Console(LogLevel, "this SetPosition {0}", state);
+            Debug.LogMessage(LogLevel,"this SetPosition {0}", state);
             switch (state)
             {
                 case PositionStates.closed: SetPosition((ushort)0); break;
@@ -406,17 +447,17 @@ namespace relay_controlled_motor_epi
 
         public override void Open()
         {
-            Debug.Console(1, this, "Open, current: {0}", StatusCurrent.ToString());
+            Debug.LogMessage(LogEventLevel.Information, this, "Open, current: {0}", StatusCurrent.ToString());
             SetPosition((ushort)100);
         }
         public override void Close()
         {
-            Debug.Console(1, this, "Close, current: {0}", StatusCurrent.ToString());
+            Debug.LogMessage(LogEventLevel.Information, this, "Close, current: {0}", StatusCurrent.ToString());
             SetPosition((ushort)0);
         }
         public override void Stop()
         {
-            Debug.Console(1, this, "Stopping motor: '{0}'", this.Name);
+            Debug.LogMessage(LogEventLevel.Information, this, "Stopping motor: '{0}'", this.Name);
             SetPosition((ushort)PercentOpenCurrent);
         }
     }

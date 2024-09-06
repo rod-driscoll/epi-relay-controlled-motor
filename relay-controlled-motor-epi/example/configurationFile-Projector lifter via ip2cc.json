@@ -1,0 +1,116 @@
+{
+    "system": {},
+    "system_url": "",
+    "template_url": "",
+    "template": {
+        "rooms": [
+            {
+                "key": "room-1",
+                "name": "Room 1",
+                "type": "advanced-room",
+                "group": "room",
+                "properties": {
+                    "defaultDisplayKey": "display-1"
+                }
+            }
+        ],
+        "devices": [
+            {
+                "key": "processor",
+                "name": "CP4",
+                "type": "cp4",
+                "group": "processor",
+                "uid": 0
+            },
+            {
+                "key": "relays-1",
+                "name": "relays",
+                "type": "ip2cc",
+                "group": "relays",
+                "properties": { 
+                    "control": {
+                        "method": "Tcpip",
+                        "tcpSshProperties": {
+                            "autoReconnect": true,
+                            "AutoReconnectIntervalMs": 10000,
+                            "address": "10.10.5.102",
+                            "port": 4998,
+                            "username": "admin",
+                            "password": ""
+                        }
+                    }               
+                }
+            },
+            {
+                "key": "lifter-1",
+                "name": "lifter",
+                "type": "relaycontrolledmotor",
+                "group": "lifters",
+                "properties": { 
+                    "RelayPulseTime": 1000,
+                    "Relays": {
+                        "Open": {
+                            "portDeviceKey": "relays-1",
+                            "portNumber": 1,
+                            "minimumChange": 100
+                        },
+                         "Close": {
+                            "portDeviceKey": "relays-1",
+                            "portNumber": 2,
+                            "minimumChange": 100
+                        },
+                        "Stop": {
+                            "method": "OpenAndClose"
+                        }
+                    }            
+                }
+            }, 
+            {
+                "key": "display-1",
+                "name": "Room 1 display",
+                "type": "pjlink",
+                "group": "displays",
+                "properties": {
+                    "control": {
+                        "method": "Tcpip",
+                        "tcpSshProperties": {
+                            "autoReconnect": true,
+                            "AutoReconnectIntervalMs": 2000,
+                            "address": "10.10.5.60",
+                            "port": 4352,
+                            "username": "",
+                            "password": "JBMIAProjectorLink"
+                        }
+                    },
+                    "lifter": {
+                        "deviceKey": "lifter-1",
+                        "downTriggersDisplayOn": true,
+                        "displayOffTriggersUp": true
+                    }
+                }
+            },
+            {
+                "key": "touchpanel-1",
+                "name": "touchpanel",
+                "type": "advanced-tp",
+                "group": "touchpanel",
+                "properties": {
+                    "type": "tsw1070",
+                    "control": {
+                        "method": "ipid",
+                        "ipid": "03"
+                    },
+                    "defaultRoomKey": "room-1",
+                    "sgdFile": "Netstrata-TSW-1070.sgd"
+                }
+            }
+        ],
+        "info": {
+            "processorType": "cp4",
+            "lastModifiedDate": "2024-04-16T17:54:41.315Z",
+            "systemType": "custom",
+            "comment": "Custom system with room and tp plugins",
+            "requiredControlSofwareVersion": ""
+        }
+    }
+}
